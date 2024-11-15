@@ -136,7 +136,23 @@ def materialize(
     if table_column not in SHORT_TABLE_COLUMN_NAME:
         raise ValueError(f"Invalid table_column={table_column} for materialisation")
 
-    column_name = column_name or _materialized_column_name(table, property, table_column)
+    column_details = MaterializedColumnDetails(table_column, property, is_disabled=False)
+    if column_name is None:
+        column_name = get_unique_name_for_materialized_column(table, column_details)
+
+    create_materialized_column(table, column_name, column_details)
+
+    if create_minmax_index:
+        add_minmax_index(table, column_name)
+
+    return column_name
+
+
+def create_materialized_column(
+    table: TableWithProperties,
+    column_name: ColumnName,
+    column_details: MaterializedColumnDetails,
+) -> None:
     on_cluster = get_on_cluster_clause_for_table(table)
 
     if table == "events":
@@ -144,9 +160,9 @@ def materialize(
             f"""
             ALTER TABLE sharded_{table} {on_cluster}
             ADD COLUMN IF NOT EXISTS
-            {column_name} VARCHAR MATERIALIZED {TRIM_AND_EXTRACT_PROPERTY.format(table_column=table_column)}
+            {column_name} VARCHAR MATERIALIZED {TRIM_AND_EXTRACT_PROPERTY.format(table_column=column_details.table_column)}
         """,
-            {"property": property},
+            {"property": column_details.property_name},
             settings={"alter_sync": 2 if TEST else 1},
         )
         sync_execute(
@@ -162,22 +178,17 @@ def materialize(
             f"""
             ALTER TABLE {table} {on_cluster}
             ADD COLUMN IF NOT EXISTS
-            {column_name} VARCHAR MATERIALIZED {TRIM_AND_EXTRACT_PROPERTY.format(table_column=table_column)}
+            {column_name} VARCHAR MATERIALIZED {TRIM_AND_EXTRACT_PROPERTY.format(table_column=column_details.table_column)}
         """,
-            {"property": property},
+            {"property": column_details.property_name},
             settings={"alter_sync": 2 if TEST else 1},
         )
 
     sync_execute(
         f"ALTER TABLE {table} {on_cluster} COMMENT COLUMN {column_name} %(comment)s",
-        {"comment": MaterializedColumnDetails(table_column, property, is_disabled=False).get_column_comment()},
+        {"comment": column_details.get_column_comment()},
         settings={"alter_sync": 2 if TEST else 1},
     )
-
-    if create_minmax_index:
-        add_minmax_index(table, column_name)
-
-    return column_name
 
 
 def update_column_is_disabled(table: TablesWithMaterializedColumns, column_name: str, is_disabled: bool) -> None:
@@ -297,22 +308,20 @@ def backfill_materialized_columns(
     )
 
 
-def _materialized_column_name(
+def get_unique_name_for_materialized_column(
     table: TableWithProperties,
-    property: PropertyName,
-    table_column: TableColumn = DEFAULT_TABLE_COLUMN,
+    column_details: MaterializedColumnDetails,
 ) -> ColumnName:
     "Returns a sanitized and unique column name to use for materialized column"
 
     prefix = "pmat_" if table == "person" else "mat_"
 
-    if table_column != DEFAULT_TABLE_COLUMN:
-        prefix += f"{SHORT_TABLE_COLUMN_NAME[table_column]}_"
-    property_str = re.sub("[^0-9a-zA-Z$]", "_", property)
+    if column_details.table_column != DEFAULT_TABLE_COLUMN:
+        prefix += f"{SHORT_TABLE_COLUMN_NAME[column_details.table_column]}_"
+    property_str = re.sub("[^0-9a-zA-Z$]", "_", column_details.property_name)
 
     existing_materialized_columns = set(get_materialized_columns(table).values())
     suffix = ""
-
     while f"{prefix}{property_str}{suffix}" in existing_materialized_columns:
         suffix = "_" + generate_random_short_suffix()
 
