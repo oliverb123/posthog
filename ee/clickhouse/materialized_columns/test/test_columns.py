@@ -39,7 +39,7 @@ class TestMaterializedColumnDetails(TestCase):
             is_disabled=False,
         )
         # old comment format is implicitly upgraded to the newer format when serializing
-        assert old_format_details.as_column_comment() == "column_materializer::properties::foo"
+        assert old_format_details.get_column_comment() == "column_materializer::properties::foo"
 
         new_format_comment = "column_materializer::person_properties::bar"
         new_format_details = MaterializedColumnDetails.from_column_comment(new_format_comment)
@@ -48,7 +48,7 @@ class TestMaterializedColumnDetails(TestCase):
             "bar",
             is_disabled=False,
         )
-        assert new_format_details.as_column_comment() == new_format_comment
+        assert new_format_details.get_column_comment() == new_format_comment
 
         new_format_disabled_comment = "column_materializer::person_properties::bar::disabled"
         new_format_disabled_details = MaterializedColumnDetails.from_column_comment(new_format_disabled_comment)
@@ -57,7 +57,7 @@ class TestMaterializedColumnDetails(TestCase):
             "bar",
             is_disabled=True,
         )
-        assert new_format_disabled_details.as_column_comment() == new_format_disabled_comment
+        assert new_format_disabled_details.get_column_comment() == new_format_disabled_comment
 
         with self.assertRaises(ValueError):
             MaterializedColumnDetails.from_column_comment("bad-prefix::property")

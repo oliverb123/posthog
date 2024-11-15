@@ -80,7 +80,7 @@ class MaterializedColumnDetails:
     COMMENT_SEPARATOR = "::"
     COMMENT_DISABLED_MARKER = "disabled"
 
-    def as_column_comment(self) -> str:
+    def get_column_comment(self) -> str:
         bits = [self.COMMENT_PREFIX, self.table_column, self.property_name]
         if self.is_disabled:
             bits.append(self.COMMENT_DISABLED_MARKER)
@@ -170,7 +170,7 @@ def materialize(
 
     sync_execute(
         f"ALTER TABLE {table} {on_cluster} COMMENT COLUMN {column_name} %(comment)s",
-        {"comment": MaterializedColumnDetails(table_column, property, is_disabled=False).as_column_comment()},
+        {"comment": MaterializedColumnDetails(table_column, property, is_disabled=False).get_column_comment()},
         settings={"alter_sync": 2 if TEST else 1},
     )
 
@@ -189,7 +189,7 @@ def update_column_is_disabled(table: TablesWithMaterializedColumns, column_name:
     on_cluster = get_on_cluster_clause_for_table(table)
     sync_execute(
         f"ALTER TABLE {table} {on_cluster} COMMENT COLUMN {column_name} %(comment)s",
-        {"comment": details.as_column_comment()},
+        {"comment": details.get_column_comment()},
         settings={"alter_sync": 2 if TEST else 1},
     )
 
