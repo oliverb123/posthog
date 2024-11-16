@@ -325,7 +325,7 @@ def get_unique_name_for_materialized_column(
         prefix += f"{SHORT_TABLE_COLUMN_NAME[column_details.table_column]}_"
     property_str = re.sub("[^0-9a-zA-Z$]", "_", column_details.property_name)
 
-    existing_materialized_columns = set(get_materialized_columns(table).values())
+    existing_materialized_columns = {column.name for column in MaterializedColumn.get_all(table)}
     suffix = ""
     while f"{prefix}{property_str}{suffix}" in existing_materialized_columns:
         suffix = "_" + generate_random_short_suffix()
