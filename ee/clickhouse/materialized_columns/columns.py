@@ -12,7 +12,6 @@ from django.utils.timezone import now
 from posthog.clickhouse.kafka_engine import trim_quotes_expr
 from posthog.clickhouse.materialized_columns import ColumnName, TablesWithMaterializedColumns
 from posthog.client import sync_execute
-from posthog.models.instance_setting import get_instance_setting
 from posthog.models.property import PropertyName, TableColumn, TableWithProperties
 from posthog.models.utils import generate_random_short_suffix
 from posthog.settings import CLICKHOUSE_CLUSTER, CLICKHOUSE_DATABASE, TEST
@@ -106,9 +105,6 @@ def get_materialized_columns(
     table: TablesWithMaterializedColumns,
     exclude_disabled_columns: bool = False,
 ) -> dict[tuple[PropertyName, TableColumn], ColumnName]:
-    if not get_instance_setting("MATERIALIZED_COLUMNS_ENABLED"):
-        return {}
-
     return {
         (column.details.property_name, column.details.table_column): column.name
         for column in MaterializedColumn.get_all(table)
