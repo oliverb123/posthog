@@ -132,26 +132,15 @@ class TestMaterializedColumns(ClickhouseTestMixin, BaseTest):
 
     @patch("secrets.choice", return_value="X")
     def test_materialized_column_naming(self, mock_choice):
-        materialize("events", "$foO();--sqlinject", create_minmax_index=True)
+        assert materialize("events", "$foO();--sqlinject", create_minmax_index=True) == "mat_$foO_____sqlinject"
+
         mock_choice.return_value = "Y"
-        materialize("events", "$foO();ääsqlinject", create_minmax_index=True)
+        assert materialize("events", "$foO();ääsqlinject", create_minmax_index=True) == "mat_$foO_____sqlinject_YYYY"
+
         mock_choice.return_value = "Z"
-        materialize("events", "$foO_____sqlinject", create_minmax_index=True)
-        materialize("person", "SoMePrOp", create_minmax_index=True)
+        assert materialize("events", "$foO_____sqlinject", create_minmax_index=True) == "mat_$foO_____sqlinject_ZZZZ"
 
-        self.assertDictContainsSubset(
-            {
-                ("$foO();--sqlinject", "properties"): "mat_$foO_____sqlinject",
-                ("$foO();ääsqlinject", "properties"): "mat_$foO_____sqlinject_YYYY",
-                ("$foO_____sqlinject", "properties"): "mat_$foO_____sqlinject_ZZZZ",
-            },
-            get_materialized_columns("events"),
-        )
-
-        self.assertEqual(
-            get_materialized_columns("person"),
-            {("SoMePrOp", "properties"): "pmat_SoMePrOp"},
-        )
+        assert materialize("person", "SoMePrOp", create_minmax_index=True) == "pmat_SoMePrOp"
 
     def test_backfilling_data(self):
         sync_execute("ALTER TABLE events DROP COLUMN IF EXISTS mat_prop")
