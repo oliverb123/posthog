@@ -85,6 +85,9 @@ class MaterializedColumnDetails:
             bits.append(self.COMMENT_DISABLED_MARKER)
         return self.COMMENT_SEPARATOR.join(bits)
 
+    def get_column_type(self) -> str:
+        return "String"
+
     @classmethod
     def from_column_comment(cls, comment: str) -> MaterializedColumnDetails:
         match comment.split(cls.COMMENT_SEPARATOR, 3):
@@ -156,7 +159,8 @@ def create_materialized_column(
             f"""
             ALTER TABLE sharded_{table} {on_cluster}
             ADD COLUMN IF NOT EXISTS
-            {column_name} VARCHAR MATERIALIZED {TRIM_AND_EXTRACT_PROPERTY.format(table_column=column_details.table_column)}
+            {column_name} {column_details.get_column_type()}
+                MATERIALIZED {TRIM_AND_EXTRACT_PROPERTY.format(table_column=column_details.table_column)}
         """,
             {"property": column_details.property_name},
             settings={"alter_sync": 2 if TEST else 1},
@@ -165,7 +169,7 @@ def create_materialized_column(
             f"""
             ALTER TABLE {table} {on_cluster}
             ADD COLUMN IF NOT EXISTS
-            {column_name} VARCHAR
+            {column_name} {column_details.get_column_type()}
         """,
             settings={"alter_sync": 2 if TEST else 1},
         )
@@ -174,7 +178,8 @@ def create_materialized_column(
             f"""
             ALTER TABLE {table} {on_cluster}
             ADD COLUMN IF NOT EXISTS
-            {column_name} VARCHAR MATERIALIZED {TRIM_AND_EXTRACT_PROPERTY.format(table_column=column_details.table_column)}
+            {column_name} {column_details.get_column_type()}
+                MATERIALIZED {TRIM_AND_EXTRACT_PROPERTY.format(table_column=column_details.table_column)}
         """,
             {"property": column_details.property_name},
             settings={"alter_sync": 2 if TEST else 1},
@@ -285,7 +290,8 @@ def backfill_materialized_columns(
             f"""
             ALTER TABLE {updated_table} {on_cluster}
             MODIFY COLUMN
-            {column_name} VARCHAR DEFAULT {TRIM_AND_EXTRACT_PROPERTY.format(table_column=column_details.table_column)}
+            {column_name} {column_details.get_column_type()}
+                DEFAULT {TRIM_AND_EXTRACT_PROPERTY.format(table_column=column_details.table_column)}
             """,
             {"property": column_details.property_name},
             settings=test_settings,
