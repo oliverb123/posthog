@@ -255,7 +255,7 @@ def drop_minmax_index(table: TablesWithMaterializedColumns, column_name: ColumnN
 
 def backfill_materialized_columns(
     table: TableWithProperties,
-    properties: list[tuple[PropertyName, TableColumn]],
+    column_names: set[ColumnName],
     backfill_period: timedelta,
     test_settings=None,
 ) -> None:
@@ -265,33 +265,34 @@ def backfill_materialized_columns(
     This will require reading and writing a lot of data on clickhouse disk.
     """
 
-    if len(properties) == 0:
+    if len(column_names) == 0:
         return
+
+    selected_columns = {
+        column.name: column.details for column in MaterializedColumn.get_all(table) if column.name in column_names
+    }
+    if missing_columns := (column_names - selected_columns.keys()):
+        raise ValueError(f"columns do not exist: {missing_columns!r}")
 
     updated_table = "sharded_events" if table == "events" else table
     on_cluster = get_on_cluster_clause_for_table(table)
 
-    materialized_columns = get_materialized_columns(table)
-
     # Hack from https://github.com/ClickHouse/ClickHouse/issues/19785
     # Note that for this to work all inserts should list columns explicitly
     # Improve this if https://github.com/ClickHouse/ClickHouse/issues/27730 ever gets resolved
-    for property, table_column in properties:
+    for column_name, column_details in selected_columns.items():
         sync_execute(
             f"""
             ALTER TABLE {updated_table} {on_cluster}
             MODIFY COLUMN
-            {materialized_columns[(property, table_column)]} VARCHAR DEFAULT {TRIM_AND_EXTRACT_PROPERTY.format(table_column=table_column)}
+            {column_name} VARCHAR DEFAULT {TRIM_AND_EXTRACT_PROPERTY.format(table_column=column_details.table_column)}
             """,
-            {"property": property},
+            {"property": column_details.property_name},
             settings=test_settings,
         )
 
     # Kick off mutations which will update clickhouse partitions in the background. This will return immediately
-    assignments = ", ".join(
-        f"{materialized_columns[property_and_column]} = {materialized_columns[property_and_column]}"
-        for property_and_column in properties
-    )
+    assignments = ", ".join(f"{column_name} = {column_name}" for column_name in selected_columns.keys())
 
     sync_execute(
         f"""

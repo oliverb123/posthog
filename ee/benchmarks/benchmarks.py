@@ -774,10 +774,11 @@ class QuerySuite:
             existing_materialized_columns = get_materialized_columns(table)
             for property in properties:
                 if (property, "properties") not in existing_materialized_columns:
-                    materialize(table, property)
+                    column_name = materialize(table, property)
+                    assert column_name is not None  # XXX
                     backfill_materialized_columns(
                         table,
-                        [(property, "properties")],
+                        {column_name},
                         backfill_period=timedelta(days=1_000),
                     )
 

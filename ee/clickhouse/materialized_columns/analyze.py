@@ -19,6 +19,7 @@ from ee.settings import (
     MATERIALIZE_COLUMNS_MINIMUM_QUERY_TIME,
 )
 from posthog.cache_utils import instance_memoize
+from posthog.clickhouse.materialized_columns import ColumnName
 from posthog.client import sync_execute
 from posthog.models.filters.mixins.utils import cached_property
 from posthog.models.person.sql import (
@@ -195,16 +196,17 @@ def materialize_properties_task(
     else:
         logger.info("Found no columns to materialize.")
 
-    properties: dict[TableWithProperties, list[tuple[PropertyName, TableColumn]]] = {
-        "events": [],
-        "person": [],
+    properties: dict[TableWithProperties, set[ColumnName]] = {
+        "events": set(),
+        "person": set(),
     }
     for table, table_column, property_name in result[:maximum]:
         logger.info(f"Materializing column. table={table}, property_name={property_name}")
 
         if not dry_run:
-            materialize(table, property_name, table_column=table_column)
-        properties[table].append((property_name, table_column))
+            column_name = materialize(table, property_name, table_column=table_column)
+            assert column_name is not None  # XXX
+        properties[table].append(column_name)
 
     if backfill_period_days > 0 and not dry_run:
         logger.info(f"Starting backfill for new materialized columns. period_days={backfill_period_days}")

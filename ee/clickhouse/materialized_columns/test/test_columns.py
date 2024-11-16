@@ -1,5 +1,6 @@
 from datetime import timedelta
 from time import sleep
+from typing import cast
 from unittest import TestCase
 from unittest.mock import patch
 
@@ -14,7 +15,11 @@ from ee.clickhouse.materialized_columns.columns import (
     materialize,
     update_column_is_disabled,
 )
-from posthog.clickhouse.materialized_columns import TablesWithMaterializedColumns, get_enabled_materialized_columns
+from posthog.clickhouse.materialized_columns import (
+    ColumnName,
+    TablesWithMaterializedColumns,
+    get_enabled_materialized_columns,
+)
 from posthog.client import sync_execute
 from posthog.conftest import create_clickhouse_tables
 from posthog.constants import GROUP_TYPES_LIMIT
@@ -196,8 +201,14 @@ class TestMaterializedColumns(ClickhouseTestMixin, BaseTest):
             properties={"another": 6},
         )
 
-        materialize("events", "prop", create_minmax_index=True)
-        materialize("events", "another", create_minmax_index=True)
+        materialized_column_names = cast(
+            set[ColumnName],
+            {
+                materialize("events", "prop", create_minmax_index=True),
+                materialize("events", "another", create_minmax_index=True),
+            },
+        )
+        assert None not in materialized_column_names  # XXX: ensure validity of cast
 
         self.assertEqual(self._count_materialized_rows("mat_prop"), 0)
         self.assertEqual(self._count_materialized_rows("mat_another"), 0)
@@ -205,7 +216,7 @@ class TestMaterializedColumns(ClickhouseTestMixin, BaseTest):
         with freeze_time("2021-05-10T14:00:01Z"):
             backfill_materialized_columns(
                 "events",
-                [("prop", "properties"), ("another", "properties")],
+                materialized_column_names,
                 timedelta(days=50),
                 test_settings={"mutations_sync": "0"},
             )
@@ -240,12 +251,13 @@ class TestMaterializedColumns(ClickhouseTestMixin, BaseTest):
         )
 
     def test_column_types(self):
-        materialize("events", "myprop", create_minmax_index=True)
+        materialized_column_name = materialize("events", "myprop", create_minmax_index=True)
+        assert materialized_column_name is not None  # XXX
 
         expr = "replaceRegexpAll(JSONExtractRaw(properties, 'myprop'), '^\"|\"$', '')"
         self.assertEqual(("MATERIALIZED", expr), self._get_column_types("mat_myprop"))
 
-        backfill_materialized_columns("events", [("myprop", "properties")], timedelta(days=50))
+        backfill_materialized_columns("events", {materialized_column_name}, timedelta(days=50))
         self.assertEqual(("DEFAULT", expr), self._get_column_types("mat_myprop"))
 
         try:
