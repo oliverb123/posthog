@@ -10,7 +10,17 @@ ColumnName = str
 TablesWithMaterializedColumns = TableWithProperties
 
 if EE_AVAILABLE:
-    from ee.clickhouse.materialized_columns.columns import get_materialized_columns
+    from ee.clickhouse.materialized_columns.columns import MaterializedColumn
+
+    def get_materialized_columns(
+        table: TablesWithMaterializedColumns,
+        exclude_disabled_columns: bool = False,
+    ) -> dict[tuple[PropertyName, TableColumn], ColumnName]:
+        return {
+            (column.details.property_name, column.details.table_column): column.name
+            for column in MaterializedColumn.get_all(table)
+            if not (exclude_disabled_columns and column.details.is_disabled)
+        }
 else:
 
     def get_materialized_columns(

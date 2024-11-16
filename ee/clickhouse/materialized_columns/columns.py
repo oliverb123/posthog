@@ -117,17 +117,6 @@ class MaterializedColumnDetails:
                 raise ValueError(f"unexpected comment format: {comment!r}")
 
 
-def get_materialized_columns(
-    table: TablesWithMaterializedColumns,
-    exclude_disabled_columns: bool = False,
-) -> dict[tuple[PropertyName, TableColumn], ColumnName]:
-    return {
-        (column.details.property_name, column.details.table_column): column.name
-        for column in MaterializedColumn.get_all(table)
-        if not (exclude_disabled_columns and column.details.is_disabled)
-    }
-
-
 def get_on_cluster_clause_for_table(table: TableWithProperties) -> str:
     return f"ON CLUSTER '{CLICKHOUSE_CLUSTER}'" if table == "events" else ""
 
