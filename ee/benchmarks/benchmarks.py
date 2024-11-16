@@ -3,8 +3,8 @@
 from .helpers import benchmark_clickhouse, no_materialized_columns, now
 from datetime import timedelta
 from ee.clickhouse.materialized_columns.analyze import (
+    MaterializedColumn,
     backfill_materialized_columns,
-    get_materialized_columns,
     materialize,
 )
 from ee.clickhouse.queries.stickiness import ClickhouseStickiness
@@ -28,16 +28,16 @@ from posthog.models.filters.filter import Filter
 from posthog.models.property import PropertyName, TableWithProperties
 from posthog.constants import FunnelCorrelationType
 
-MATERIALIZED_PROPERTIES: dict[TableWithProperties, list[PropertyName]] = {
-    "events": [
+MATERIALIZED_PROPERTIES: dict[TableWithProperties, set[PropertyName]] = {
+    "events": {
         "$current_url",
         "$event_type",
         "$host",
-    ],
-    "person": [
+    },
+    "person": {
         "$browser",
         "email",
-    ],
+    },
 }
 
 DATE_RANGE = {"date_from": "2021-01-01", "date_to": "2021-10-01", "interval": "week"}
@@ -770,16 +770,17 @@ class QuerySuite:
         get_person_property_values_for_key("$browser", self.team)
 
     def setup(self):
-        for table, properties in MATERIALIZED_PROPERTIES.items():
-            existing_materialized_columns = get_materialized_columns(table)
-            for property in properties:
-                if (property, "properties") not in existing_materialized_columns:
-                    column_name = materialize(table, property)
-                    backfill_materialized_columns(
-                        table,
-                        {column_name},
-                        backfill_period=timedelta(days=1_000),
-                    )
+        for table, properties_to_materialize in MATERIALIZED_PROPERTIES.items():
+            existing_materialized_properties = {
+                column.details.property_name for column in MaterializedColumn.get_all(table)
+            }
+            for property in properties_to_materialize - existing_materialized_properties:
+                column_name = materialize(table, property)
+                backfill_materialized_columns(
+                    table,
+                    {column_name},
+                    backfill_period=timedelta(days=1_000),
+                )
 
         # :TRICKY: Data in benchmark servers has ID=2
         team = Team.objects.filter(id=2).first()
