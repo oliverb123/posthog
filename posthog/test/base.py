@@ -587,8 +587,10 @@ def cleanup_materialized_columns():
     default_columns = [
         column.name
         for column in MaterializedColumn.get_all("events")
-        if column.details.table_column == "properties"
-        and column.details.property_name in EVENTS_TABLE_DEFAULT_MATERIALIZED_COLUMNS
+        if (
+            column.details.table_column == "properties"
+            and column.details.property_name in EVENTS_TABLE_DEFAULT_MATERIALIZED_COLUMNS
+        )
     ]
 
     optionally_drop("events", lambda name: name not in default_columns)
