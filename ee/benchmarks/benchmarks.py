@@ -775,7 +775,6 @@ class QuerySuite:
             for property in properties:
                 if (property, "properties") not in existing_materialized_columns:
                     column_name = materialize(table, property)
-                    assert column_name is not None  # XXX
                     backfill_materialized_columns(
                         table,
                         {column_name},

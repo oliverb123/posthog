@@ -5,6 +5,7 @@ from collections.abc import Iterator
 from dataclasses import dataclass, replace
 from datetime import timedelta
 from typing import Literal, NamedTuple, cast
+from collections.abc import Callable
 
 from clickhouse_driver.errors import ServerException
 from django.utils.timezone import now
@@ -65,6 +66,16 @@ class MaterializedColumn(NamedTuple):
             case _:
                 # this should never happen (column names are unique within a table) and suggests an error in the query
                 raise ValueError(f"got {len(columns)} columns, expected 0 or 1")
+
+    @staticmethod
+    def find(
+        table: TablesWithMaterializedColumns,
+        predicate: Callable[[MaterializedColumn], bool],
+    ) -> MaterializedColumn | None:
+        for column in MaterializedColumn.get_all(table):
+            if predicate(column):
+                return column
+        return None
 
 
 @dataclass(frozen=True)
@@ -127,12 +138,13 @@ def materialize(
     column_name: ColumnName | None = None,
     table_column: TableColumn = DEFAULT_TABLE_COLUMN,
     create_minmax_index=not TEST,
-) -> ColumnName | None:
-    if (property, table_column) in get_materialized_columns(table):
+) -> ColumnName:
+    if existing_column := MaterializedColumn.find(
+        table, lambda column: column.details.table_column == table_column and column.details.property_name == property
+    ):
         if TEST:
-            return None
-
-        raise ValueError(f"Property already materialized. table={table}, property={property}, column={table_column}")
+            return existing_column.name
+        raise ValueError(f"Property already materialized: {existing_column!r}")
 
     if table_column not in SHORT_TABLE_COLUMN_NAME:
         raise ValueError(f"Invalid table_column={table_column} for materialisation")

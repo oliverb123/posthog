@@ -205,8 +205,7 @@ def materialize_properties_task(
 
         if not dry_run:
             column_name = materialize(table, property_name, table_column=table_column)
-            assert column_name is not None  # XXX
-        properties[table].append(column_name)
+            properties[table].add(column_name)
 
     if backfill_period_days > 0 and not dry_run:
         logger.info(f"Starting backfill for new materialized columns. period_days={backfill_period_days}")

@@ -1,6 +1,5 @@
 from datetime import timedelta
 from time import sleep
-from typing import cast
 from unittest import TestCase
 from unittest.mock import patch
 
@@ -16,7 +15,6 @@ from ee.clickhouse.materialized_columns.columns import (
     update_column_is_disabled,
 )
 from posthog.clickhouse.materialized_columns import (
-    ColumnName,
     TablesWithMaterializedColumns,
     get_enabled_materialized_columns,
 )
@@ -201,14 +199,10 @@ class TestMaterializedColumns(ClickhouseTestMixin, BaseTest):
             properties={"another": 6},
         )
 
-        materialized_column_names = cast(
-            set[ColumnName],
-            {
-                materialize("events", "prop", create_minmax_index=True),
-                materialize("events", "another", create_minmax_index=True),
-            },
-        )
-        assert None not in materialized_column_names  # XXX: ensure validity of cast
+        materialized_column_names = {
+            materialize("events", "prop", create_minmax_index=True),
+            materialize("events", "another", create_minmax_index=True),
+        }
 
         self.assertEqual(self._count_materialized_rows("mat_prop"), 0)
         self.assertEqual(self._count_materialized_rows("mat_another"), 0)
@@ -252,7 +246,6 @@ class TestMaterializedColumns(ClickhouseTestMixin, BaseTest):
 
     def test_column_types(self):
         materialized_column_name = materialize("events", "myprop", create_minmax_index=True)
-        assert materialized_column_name is not None  # XXX
 
         expr = "replaceRegexpAll(JSONExtractRaw(properties, 'myprop'), '^\"|\"$', '')"
         self.assertEqual(("MATERIALIZED", expr), self._get_column_types("mat_myprop"))
