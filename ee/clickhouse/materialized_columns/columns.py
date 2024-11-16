@@ -18,8 +18,6 @@ from posthog.settings import CLICKHOUSE_CLUSTER, CLICKHOUSE_DATABASE, TEST
 
 DEFAULT_TABLE_COLUMN: Literal["properties"] = "properties"
 
-TRIM_AND_EXTRACT_PROPERTY = trim_quotes_expr("JSONExtractRaw({table_column}, %(property)s)")
-
 SHORT_TABLE_COLUMN_NAME = {
     "properties": "p",
     "group_properties": "gp",
@@ -87,6 +85,10 @@ class MaterializedColumnDetails:
 
     def get_column_type(self) -> str:
         return "String"
+
+    def get_expression(self) -> str:
+        # XXX: assumes `property` is being provided as a parameter to the query
+        return trim_quotes_expr(f"JSONExtractRaw({self.table_column}, %(property)s)")
 
     @classmethod
     def from_column_comment(cls, comment: str) -> MaterializedColumnDetails:
@@ -160,7 +162,7 @@ def create_materialized_column(
             ALTER TABLE sharded_{table} {on_cluster}
             ADD COLUMN IF NOT EXISTS
             {column_name} {column_details.get_column_type()}
-                MATERIALIZED {TRIM_AND_EXTRACT_PROPERTY.format(table_column=column_details.table_column)}
+                MATERIALIZED {column_details.get_expression()}
         """,
             {"property": column_details.property_name},
             settings={"alter_sync": 2 if TEST else 1},
@@ -179,7 +181,7 @@ def create_materialized_column(
             ALTER TABLE {table} {on_cluster}
             ADD COLUMN IF NOT EXISTS
             {column_name} {column_details.get_column_type()}
-                MATERIALIZED {TRIM_AND_EXTRACT_PROPERTY.format(table_column=column_details.table_column)}
+                MATERIALIZED {column_details.get_expression()}
         """,
             {"property": column_details.property_name},
             settings={"alter_sync": 2 if TEST else 1},
@@ -291,7 +293,7 @@ def backfill_materialized_columns(
             ALTER TABLE {updated_table} {on_cluster}
             MODIFY COLUMN
             {column_name} {column_details.get_column_type()}
-                DEFAULT {TRIM_AND_EXTRACT_PROPERTY.format(table_column=column_details.table_column)}
+                DEFAULT {column_details.get_expression()}
             """,
             {"property": column_details.property_name},
             settings=test_settings,

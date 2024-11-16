@@ -2,7 +2,6 @@ from collections.abc import Iterator
 from celery.utils.log import get_task_logger
 
 from ee.clickhouse.materialized_columns.columns import (
-    TRIM_AND_EXTRACT_PROPERTY,
     MaterializedColumn,
     get_on_cluster_clause_for_table,
 )
@@ -27,7 +26,7 @@ def mark_all_materialized() -> None:
             ALTER TABLE {updated_table} {on_cluster}
             MODIFY COLUMN
             {materialized_column.name} {materialized_column.details.get_column_type()}
-                MATERIALIZED {TRIM_AND_EXTRACT_PROPERTY.format(table_column=materialized_column.details.table_column)}
+                MATERIALIZED {materialized_column.details.get_expression()}
             """,
             {"property": materialized_column.details.property_name},
         )
