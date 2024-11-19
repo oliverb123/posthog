@@ -1,14 +1,19 @@
 from __future__ import annotations
 
+from concurrent.futures import wait
+from functools import partial
 import re
 from collections.abc import Iterator
 from dataclasses import dataclass, replace
 from datetime import timedelta
 from typing import Literal, NamedTuple, cast
 
+from clickhouse_driver import Client
 from clickhouse_driver.errors import ServerException
 from django.utils.timezone import now
 
+from posthog.clickhouse.client.connection import make_ch_pool
+from posthog.clickhouse.cluster import ClickhouseCluster
 from posthog.clickhouse.kafka_engine import trim_quotes_expr
 from posthog.clickhouse.materialized_columns import ColumnName, TablesWithMaterializedColumns
 from posthog.client import sync_execute
@@ -16,6 +21,67 @@ from posthog.models.instance_setting import get_instance_setting
 from posthog.models.property import PropertyName, TableColumn, TableWithProperties
 from posthog.models.utils import generate_random_short_suffix
 from posthog.settings import CLICKHOUSE_CLUSTER, CLICKHOUSE_DATABASE, TEST
+
+
+@dataclass
+class Column:
+    table: str
+    name: str
+
+    def exists(self, client: Client) -> bool:
+        [(count,)] = client.execute(
+            """
+            SELECT count()
+            FROM system.columns
+            WHERE
+                database = currentDatabase()
+                AND table = %(table)s
+                AND name = %(name)s
+            """,
+            {"table": self.table, "name": self.name},
+        )
+        return count > 0
+
+    def drop(self, client: Client) -> None:
+        client.execute(
+            f"ALTER TABLE {self.table} DROP COLUMN IF EXISTS {self.name}",
+            settings={"alter_sync": 2 if TEST else 1},
+        )
+
+    def drop_if_exists(self, client: Client) -> None:
+        if self.exists(client):
+            return self.drop(client)
+
+
+@dataclass
+class Index:
+    table: str
+    name: str
+
+    def exists(self, client: Client) -> bool:
+        [(count,)] = client.execute(
+            """
+            SELECT count()
+            FROM system.data_skipping_indices
+            WHERE
+                database = currentDatabase()
+                AND table = %(table)s
+                AND name = %(name)s
+            """,
+            {"table": self.table, "name": self.name},
+        )
+        return count > 0
+
+    def drop(self, client: Client) -> None:
+        client.execute(
+            f"ALTER TABLE {self.table} DROP COLUMN IF EXISTS {self.name}",
+            settings={"alter_sync": 2 if TEST else 1},
+        )
+
+    def drop_if_exists(self, client: Client) -> None:
+        if self.exists(client):
+            return self.drop(client)
+
 
 DEFAULT_TABLE_COLUMN: Literal["properties"] = "properties"
 
@@ -194,21 +260,22 @@ def update_column_is_disabled(table: TablesWithMaterializedColumns, column_name:
     )
 
 
+def _drop_all_data(table, column_name, client):
+    Index(table, f"minmax_{column_name}").drop_if_exists(client)
+    Column(table, column_name).drop_if_exists(client)
+
+
 def drop_column(table: TablesWithMaterializedColumns, column_name: str) -> None:
-    drop_minmax_index(table, column_name)
+    # TODO: this should probably check to see if the column has been disabled first
+    with make_ch_pool().get_client() as client:
+        cluster = ClickhouseCluster(client)
 
-    on_cluster = get_on_cluster_clause_for_table(table)
-    sync_execute(
-        f"ALTER TABLE {table} {on_cluster} DROP COLUMN IF EXISTS {column_name}",
-        settings={"alter_sync": 2 if TEST else 1},
-    )
-
-    if table == "events":
-        sync_execute(
-            f"ALTER TABLE sharded_{table} {on_cluster} DROP COLUMN IF EXISTS {column_name}",
-            {"property": property},
-            settings={"alter_sync": 2 if TEST else 1},
-        )
+    match table:
+        case "events":
+            wait(cluster.map_hosts(Column(table, column_name).drop_if_exists).values())
+            wait(cluster.map_shards(partial(_drop_all_data, "sharded_events", column_name)).values())
+        case table:
+            wait(cluster.map_shards(partial(_drop_all_data, table, column_name)).values())
 
 
 def add_minmax_index(table: TablesWithMaterializedColumns, column_name: ColumnName):
