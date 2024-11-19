@@ -300,19 +300,6 @@ def add_minmax_index(table: TablesWithMaterializedColumns, column_name: ColumnNa
     return index_name
 
 
-def drop_minmax_index(table: TablesWithMaterializedColumns, column_name: ColumnName) -> None:
-    on_cluster = get_on_cluster_clause_for_table(table)
-
-    # XXX: copy/pasted from `add_minmax_index`
-    updated_table = "sharded_events" if table == "events" else table
-    index_name = f"minmax_{column_name}"
-
-    sync_execute(
-        f"ALTER TABLE {updated_table} {on_cluster} DROP INDEX IF EXISTS {index_name}",
-        settings={"alter_sync": 2 if TEST else 1},
-    )
-
-
 def backfill_materialized_columns(
     table: TableWithProperties,
     properties: list[tuple[PropertyName, TableColumn]],
