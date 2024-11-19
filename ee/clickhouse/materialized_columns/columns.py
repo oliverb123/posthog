@@ -272,10 +272,16 @@ def drop_column(table: TablesWithMaterializedColumns, column_name: str) -> None:
 
     match table:
         case "events":
-            wait(cluster.map_hosts(Column(table, column_name).drop_if_exists).values())
-            wait(cluster.map_shards(partial(_drop_all_data, "sharded_events", column_name)).values())
-        case table:
-            wait(cluster.map_shards(partial(_drop_all_data, table, column_name)).values())
+            dist_table = "events"
+            data_table = "sharded_events"
+        case _:
+            dist_table = None
+            data_table = table
+
+    if dist_table is not None:
+        wait(cluster.map_hosts(Column(dist_table, column_name).drop_if_exists).values())
+
+    wait(cluster.map_shards(partial(_drop_all_data, data_table, column_name)).values())
 
 
 def add_minmax_index(table: TablesWithMaterializedColumns, column_name: ColumnName):
