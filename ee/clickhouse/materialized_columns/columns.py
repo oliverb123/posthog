@@ -9,7 +9,6 @@ from datetime import timedelta
 from typing import Literal, NamedTuple, cast
 
 from clickhouse_driver import Client
-from clickhouse_driver.errors import ServerException
 from django.utils.timezone import now
 
 from posthog.clickhouse.client.connection import make_ch_pool
@@ -186,6 +185,24 @@ def get_on_cluster_clause_for_table(table: TableWithProperties) -> str:
     return f"ON CLUSTER '{CLICKHOUSE_CLUSTER}'" if table == "events" else ""
 
 
+def _get_cluster() -> ClickhouseCluster:
+    # TODO: this should probably check to see if the column has been disabled first
+    with make_ch_pool().get_client() as client:
+        return ClickhouseCluster(client)
+
+
+def _get_table_info(table: TableWithProperties) -> tuple[str | None, str]:
+    match table:
+        case "events":
+            dist_table = "events"
+            data_table = "sharded_events"
+        case _:
+            dist_table = None
+            data_table = table
+
+    return dist_table, data_table
+
+
 def materialize(
     table: TableWithProperties,
     property: PropertyName,
@@ -203,61 +220,80 @@ def materialize(
         raise ValueError(f"Invalid table_column={table_column} for materialisation")
 
     column_name = column_name or _materialized_column_name(table, property, table_column)
-    on_cluster = get_on_cluster_clause_for_table(table)
 
-    if table == "events":
+    dist_table, data_table = _get_table_info(table)
+
+    # execute on hosts
+    sync_execute(
+        f"""
+        ALTER TABLE {data_table}
+        ADD COLUMN IF NOT EXISTS
+        {column_name} VARCHAR MATERIALIZED {TRIM_AND_EXTRACT_PROPERTY.format(table_column=table_column)}
+    """,
+        {"property": property},
+        settings={"alter_sync": 2 if TEST else 1},
+    )
+
+    if create_minmax_index:
+        index_name = f"minmax_{column_name}"
         sync_execute(
             f"""
-            ALTER TABLE sharded_{table} {on_cluster}
-            ADD COLUMN IF NOT EXISTS
-            {column_name} VARCHAR MATERIALIZED {TRIM_AND_EXTRACT_PROPERTY.format(table_column=table_column)}
-        """,
-            {"property": property},
+            ALTER TABLE {data_table}
+            ADD INDEX IF NOT EXISTS {index_name} {column_name}
+            TYPE minmax GRANULARITY 1
+            """,
             settings={"alter_sync": 2 if TEST else 1},
         )
+
+    if dist_table is None:
+        sync_execute(
+            f"ALTER TABLE {data_table} COMMENT COLUMN {column_name} %(comment)s",
+            {"comment": MaterializedColumnDetails(table_column, property, is_disabled=False).as_column_comment()},
+            settings={"alter_sync": 2 if TEST else 1},
+        )
+
+    # execute on shards
+    if dist_table is not None:
         sync_execute(
             f"""
-            ALTER TABLE {table} {on_cluster}
+            ALTER TABLE {dist_table}
             ADD COLUMN IF NOT EXISTS
             {column_name} VARCHAR
         """,
             settings={"alter_sync": 2 if TEST else 1},
         )
-    else:
         sync_execute(
-            f"""
-            ALTER TABLE {table} {on_cluster}
-            ADD COLUMN IF NOT EXISTS
-            {column_name} VARCHAR MATERIALIZED {TRIM_AND_EXTRACT_PROPERTY.format(table_column=table_column)}
-        """,
-            {"property": property},
+            f"ALTER TABLE {dist_table} COMMENT COLUMN {column_name} %(comment)s",
+            {"comment": MaterializedColumnDetails(table_column, property, is_disabled=False).as_column_comment()},
             settings={"alter_sync": 2 if TEST else 1},
         )
-
-    sync_execute(
-        f"ALTER TABLE {table} {on_cluster} COMMENT COLUMN {column_name} %(comment)s",
-        {"comment": MaterializedColumnDetails(table_column, property, is_disabled=False).as_column_comment()},
-        settings={"alter_sync": 2 if TEST else 1},
-    )
-
-    if create_minmax_index:
-        add_minmax_index(table, column_name)
 
     return column_name
 
 
-def update_column_is_disabled(table: TablesWithMaterializedColumns, column_name: str, is_disabled: bool) -> None:
-    details = replace(
-        MaterializedColumn.get(table, column_name).details,
-        is_disabled=is_disabled,
-    )
-
-    on_cluster = get_on_cluster_clause_for_table(table)
-    sync_execute(
-        f"ALTER TABLE {table} {on_cluster} COMMENT COLUMN {column_name} %(comment)s",
-        {"comment": details.as_column_comment()},
+def _set_column_comment(table, column_name, comment, client):
+    client.execute(
+        f"ALTER TABLE {table} COMMENT COLUMN {column_name} %(comment)s",
+        {"comment": comment},
         settings={"alter_sync": 2 if TEST else 1},
     )
+
+
+def update_column_is_disabled(table: TablesWithMaterializedColumns, column_name: str, is_disabled: bool) -> None:
+    cluster = _get_cluster()
+    dist_table, data_table = _get_table_info(table)
+
+    comment = replace(
+        MaterializedColumn.get(table, column_name).details,
+        is_disabled=is_disabled,
+    ).as_column_comment()
+
+    if dist_table is not None:
+        results = cluster.map_hosts(partial(_set_column_comment, dist_table, column_name, comment)).values()
+    else:
+        results = cluster.map_shards(partial(_set_column_comment, data_table, column_name, comment)).values()
+
+    wait(results)
 
 
 def _drop_all_data(table, column_name, client):
@@ -266,44 +302,15 @@ def _drop_all_data(table, column_name, client):
 
 
 def drop_column(table: TablesWithMaterializedColumns, column_name: str) -> None:
-    # TODO: this should probably check to see if the column has been disabled first
-    with make_ch_pool().get_client() as client:
-        cluster = ClickhouseCluster(client)
+    cluster = _get_cluster()
+    dist_table, data_table = _get_table_info(table)
 
-    match table:
-        case "events":
-            dist_table = "events"
-            data_table = "sharded_events"
-        case _:
-            dist_table = None
-            data_table = table
+    # TODO: this should probably check to see if the column has been disabled first
 
     if dist_table is not None:
         wait(cluster.map_hosts(Column(dist_table, column_name).drop_if_exists).values())
 
     wait(cluster.map_shards(partial(_drop_all_data, data_table, column_name)).values())
-
-
-def add_minmax_index(table: TablesWithMaterializedColumns, column_name: ColumnName):
-    # Note: This will be populated on backfill
-    on_cluster = get_on_cluster_clause_for_table(table)
-    updated_table = "sharded_events" if table == "events" else table
-    index_name = f"minmax_{column_name}"
-
-    try:
-        sync_execute(
-            f"""
-            ALTER TABLE {updated_table} {on_cluster}
-            ADD INDEX {index_name} {column_name}
-            TYPE minmax GRANULARITY 1
-            """,
-            settings={"alter_sync": 2 if TEST else 1},
-        )
-    except ServerException as err:
-        if "index with this name already exists" not in str(err):
-            raise
-
-    return index_name
 
 
 def backfill_materialized_columns(
