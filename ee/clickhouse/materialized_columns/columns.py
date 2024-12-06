@@ -259,13 +259,11 @@ def materialize(
 
     cluster = get_cluster()
     table_info = tables[table]
+    property_info = PropertyInfo(property, table_column)
 
     column = MaterializedColumn(
-        name=column_name or _materialized_column_name(table, property, table_column),
-        details=MaterializedColumnDetails(
-            property=PropertyInfo(property, table_column),
-            is_disabled=False,
-        ),
+        name=column_name or _materialized_column_name(table, property_info),
+        details=MaterializedColumnDetails(property=property_info, is_disabled=False),
         is_nullable=is_nullable,
     )
 
@@ -462,16 +460,15 @@ def backfill_materialized_columns(
 
 def _materialized_column_name(
     table: TableWithProperties,
-    property: PropertyName,
-    table_column: TableColumn = DEFAULT_TABLE_COLUMN,
+    property: PropertyInfo,
 ) -> ColumnName:
     "Returns a sanitized and unique column name to use for materialized column"
 
     prefix = "pmat_" if table == "person" else "mat_"
 
-    if table_column != DEFAULT_TABLE_COLUMN:
-        prefix += f"{SHORT_TABLE_COLUMN_NAME[table_column]}_"
-    property_str = re.sub("[^0-9a-zA-Z$]", "_", property)
+    if property.column != DEFAULT_TABLE_COLUMN:
+        prefix += f"{SHORT_TABLE_COLUMN_NAME[property.column]}_"
+    property_str = re.sub("[^0-9a-zA-Z$]", "_", property.name)
 
     existing_materialized_column_names = {column.name for column in MaterializedColumn.get_all(table)}
     suffix = ""
