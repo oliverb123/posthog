@@ -578,7 +578,7 @@ def stripResponse(response, remove=("action", "label", "persons_urls", "filter")
 
 def cleanup_materialized_columns():
     try:
-        from ee.clickhouse.materialized_columns.columns import get_materialized_columns
+        from ee.clickhouse.materialized_columns.columns import MaterializedColumn, get_materialized_columns
         from ee.clickhouse.materialized_columns.test.test_columns import EVENTS_TABLE_DEFAULT_MATERIALIZED_COLUMNS
     except:
         # EE not available? Skip
@@ -588,7 +588,7 @@ def cleanup_materialized_columns():
         drops = ",".join(
             [
                 f"DROP COLUMN {column.name}"
-                for column in get_materialized_columns(table).values()
+                for column in MaterializedColumn.get_all(table)
                 if filter is None or filter(column.name)
             ]
         )
