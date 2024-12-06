@@ -242,10 +242,10 @@ def materialize(
     table_column: TableColumn = DEFAULT_TABLE_COLUMN,
     create_minmax_index=not TEST,
     is_nullable: bool = False,
-) -> ColumnName | None:
-    if (property, table_column) in get_materialized_columns(table):
+) -> MaterializedColumn:
+    if existing_column := get_materialized_columns(table).get((property, table_column)):
         if TEST:
-            return None
+            return existing_column
 
         raise ValueError(f"Property already materialized. table={table}, property={property}, column={table_column}")
 
@@ -283,7 +283,7 @@ def materialize(
             ).execute
         ).result()
 
-    return column.name
+    return column
 
 
 @dataclass
