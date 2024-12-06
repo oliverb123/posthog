@@ -9,6 +9,7 @@ import structlog
 from ee.clickhouse.materialized_columns.columns import (
     DEFAULT_TABLE_COLUMN,
     MaterializedColumn,
+    PropertyInfo,
     backfill_materialized_columns,
     materialize,
 )
@@ -29,7 +30,7 @@ from posthog.models.property import PropertyName, TableColumn, TableWithProperti
 from posthog.models.property_definition import PropertyDefinition
 from posthog.models.team import Team
 
-Suggestion = tuple[TableWithProperties, TableColumn, PropertyName]
+Suggestion = tuple[TableWithProperties, PropertyInfo]
 
 logger = structlog.get_logger(__name__)
 
@@ -160,7 +161,7 @@ LIMIT 100 -- Make sure we don't add 100s of columns in one run
         ),
     )
 
-    return [("events", table_column, property_name) for (table_column, property_name) in raw_queries]
+    return [("events", PropertyInfo(property_name, table_column)) for (table_column, property_name) in raw_queries]
 
 
 def materialize_properties_task(
@@ -180,19 +181,14 @@ def materialize_properties_task(
     if properties_to_materialize is None:
         properties_to_materialize = _analyze(time_to_analyze_hours, min_query_time, team_id_to_analyze)
 
-    properties_by_table: dict[TableWithProperties, list[tuple[TableColumn, PropertyName]]] = defaultdict(set)
-    for table, table_column, property_name in properties_to_materialize:
-        properties_by_table[table].add((table_column, property_name))
+    properties_by_table: dict[TableWithProperties, set[PropertyInfo]] = defaultdict(set)
+    for table, property in properties_to_materialize:
+        properties_by_table[table].add(property)
 
     result: list[Suggestion] = []
     for table, table_properties_to_materialize in properties_by_table.items():
         already_materialized = {column.details.property for column in MaterializedColumn.get_all(table)}
-        result.extend(
-            [
-                (table, table_column, property_name)
-                for table_column, property_name in (table_properties_to_materialize - already_materialized)
-            ]
-        )
+        result.extend([(table, property) for property in (table_properties_to_materialize - already_materialized)])
 
     if len(result) > 0:
         logger.info(f"Calculated columns that could be materialized. count={len(result)}")
@@ -200,11 +196,11 @@ def materialize_properties_task(
         logger.info("Found no columns to materialize.")
 
     materialized_columns: dict[TableWithProperties, list[MaterializedColumn]] = defaultdict(list)
-    for table, table_column, property_name in result[:maximum]:
-        logger.info(f"Materializing column. table={table}, property_name={property_name}")
+    for table, property in result[:maximum]:
+        logger.info(f"Materializing column. table={table}, property={property!r}")
         if not dry_run:
             materialized_columns[table].append(
-                materialize(table, property_name, table_column=table_column, is_nullable=is_nullable)
+                materialize(table, property.name, table_column=property.column, is_nullable=is_nullable)
             )
 
     if backfill_period_days > 0 and not dry_run:

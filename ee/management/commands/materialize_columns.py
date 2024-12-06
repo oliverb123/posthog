@@ -7,7 +7,7 @@ from ee.clickhouse.materialized_columns.analyze import (
     logger,
     materialize_properties_task,
 )
-from ee.clickhouse.materialized_columns.columns import DEFAULT_TABLE_COLUMN
+from ee.clickhouse.materialized_columns.columns import DEFAULT_TABLE_COLUMN, PropertyInfo
 from posthog.settings import (
     MATERIALIZE_COLUMNS_ANALYSIS_PERIOD_HOURS,
     MATERIALIZE_COLUMNS_BACKFILL_PERIOD_DAYS,
@@ -90,8 +90,7 @@ class Command(BaseCommand):
                 properties_to_materialize=[
                     (
                         options["property_table"],
-                        options["table_column"],
-                        prop,
+                        PropertyInfo(prop, options["table_column"]),
                     )
                     for prop in options.get("property")
                 ],
