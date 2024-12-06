@@ -192,8 +192,10 @@ class TestMaterializedColumns(ClickhouseTestMixin, BaseTest):
             properties={"another": 6},
         )
 
-        materialize("events", "prop", create_minmax_index=True)
-        materialize("events", "another", create_minmax_index=True)
+        columns = [
+            materialize("events", "prop", create_minmax_index=True),
+            materialize("events", "another", create_minmax_index=True),
+        ]
 
         self.assertEqual(self._count_materialized_rows("mat_prop"), 0)
         self.assertEqual(self._count_materialized_rows("mat_another"), 0)
@@ -201,7 +203,7 @@ class TestMaterializedColumns(ClickhouseTestMixin, BaseTest):
         with freeze_time("2021-05-10T14:00:01Z"):
             backfill_materialized_columns(
                 "events",
-                [("prop", "properties"), ("another", "properties")],
+                columns,
                 timedelta(days=50),
                 test_settings={"mutations_sync": "0"},
             )
@@ -236,8 +238,10 @@ class TestMaterializedColumns(ClickhouseTestMixin, BaseTest):
         )
 
     def test_column_types(self):
-        materialize("events", "myprop", create_minmax_index=True)
-        materialize("events", "myprop_nullable", create_minmax_index=True, is_nullable=True)
+        columns = [
+            materialize("events", "myprop", create_minmax_index=True),
+            materialize("events", "myprop_nullable", create_minmax_index=True, is_nullable=True),
+        ]
 
         expr_nonnullable = "replaceRegexpAll(JSONExtractRaw(properties, 'myprop'), '^\"|\"$', '')"
         expr_nullable = "JSONExtract(properties, 'myprop_nullable', 'Nullable(String)')"
@@ -246,9 +250,7 @@ class TestMaterializedColumns(ClickhouseTestMixin, BaseTest):
             ("Nullable(String)", "MATERIALIZED", expr_nullable), self._get_column_types("mat_myprop_nullable")
         )
 
-        backfill_materialized_columns(
-            "events", [("myprop", "properties"), ("myprop_nullable", "properties")], timedelta(days=50)
-        )
+        backfill_materialized_columns("events", columns, timedelta(days=50))
         self.assertEqual(("String", "DEFAULT", expr_nonnullable), self._get_column_types("mat_myprop"))
         self.assertEqual(("Nullable(String)", "DEFAULT", expr_nullable), self._get_column_types("mat_myprop_nullable"))
 

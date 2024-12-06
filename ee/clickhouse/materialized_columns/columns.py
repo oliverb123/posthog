@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 import re
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterable, Iterator
 from copy import copy
 from dataclasses import dataclass, replace
 from datetime import timedelta
@@ -433,7 +433,7 @@ class BackfillColumnTask:
 
 def backfill_materialized_columns(
     table: TableWithProperties,
-    properties: list[tuple[PropertyName, TableColumn]],
+    columns: Iterable[MaterializedColumn],
     backfill_period: timedelta,
     test_settings=None,
 ) -> None:
@@ -442,25 +442,14 @@ def backfill_materialized_columns(
 
     This will require reading and writing a lot of data on clickhouse disk.
     """
-
-    if len(properties) == 0:
-        return
-
     cluster = get_cluster()
     table_info = tables[table]
-
-    # TODO: this will eventually need to handle duplicates
-    materialized_columns = {
-        (column.details.property_name, column.details.table_column): column
-        for column in MaterializedColumn.get_all(table)
-    }
-    columns = [materialized_columns[property] for property in properties]
 
     table_info.map_data_nodes(
         cluster,
         BackfillColumnTask(
             table_info.data_table,
-            columns,
+            [*columns],
             backfill_period if table == "events" else None,  # XXX
             test_settings,
         ).execute,
