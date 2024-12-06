@@ -469,7 +469,7 @@ def _materialized_column_name(
         prefix += f"{SHORT_TABLE_COLUMN_NAME[table_column]}_"
     property_str = re.sub("[^0-9a-zA-Z$]", "_", property)
 
-    existing_materialized_column_names = {column.name for column in get_materialized_columns(table).values()}
+    existing_materialized_column_names = {column.name for column in MaterializedColumn.get_all(table)}
     suffix = ""
 
     while f"{prefix}{property_str}{suffix}" in existing_materialized_column_names:
