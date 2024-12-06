@@ -10,7 +10,6 @@ from ee.clickhouse.materialized_columns.columns import (
     DEFAULT_TABLE_COLUMN,
     MaterializedColumn,
     backfill_materialized_columns,
-    get_materialized_columns,
     materialize,
 )
 from ee.settings import (
@@ -165,7 +164,7 @@ LIMIT 100 -- Make sure we don't add 100s of columns in one run
 
 
 def materialize_properties_task(
-    columns_to_materialize: Optional[list[Suggestion]] = None,
+    properties_to_materialize: Optional[list[Suggestion]] = None,
     time_to_analyze_hours: int = MATERIALIZE_COLUMNS_ANALYSIS_PERIOD_HOURS,
     maximum: int = MATERIALIZE_COLUMNS_MAX_AT_ONCE,
     min_query_time: int = MATERIALIZE_COLUMNS_MINIMUM_QUERY_TIME,
@@ -178,19 +177,24 @@ def materialize_properties_task(
     Creates materialized columns for event and person properties based off of slow queries
     """
 
-    if columns_to_materialize is None:
-        columns_to_materialize = _analyze(time_to_analyze_hours, min_query_time, team_id_to_analyze)
+    if properties_to_materialize is None:
+        properties_to_materialize = _analyze(time_to_analyze_hours, min_query_time, team_id_to_analyze)
 
-    columns_by_table: dict[TableWithProperties, list[tuple[TableColumn, PropertyName]]] = defaultdict(list)
-    for table, table_column, property_name in columns_to_materialize:
-        columns_by_table[table].append((table_column, property_name))
+    properties_by_table: dict[TableWithProperties, list[tuple[TableColumn, PropertyName]]] = defaultdict(set)
+    for table, table_column, property_name in properties_to_materialize:
+        properties_by_table[table].add((table_column, property_name))
 
     result: list[Suggestion] = []
-    for table, columns in columns_by_table.items():
-        existing_materialized_columns = get_materialized_columns(table)
-        for table_column, property_name in columns:
-            if (property_name, table_column) not in existing_materialized_columns:
-                result.append((table, table_column, property_name))
+    for table, table_properties_to_materialize in properties_by_table.items():
+        already_materialized = {
+            (column.details.table_column, column.details.property_name) for column in MaterializedColumn.get_all(table)
+        }
+        result.extend(
+            [
+                (table, table_column, property_name)
+                for table_column, property_name in (table_properties_to_materialize - already_materialized)
+            ]
+        )
 
     if len(result) > 0:
         logger.info(f"Calculated columns that could be materialized. count={len(result)}")
