@@ -9,6 +9,7 @@ from freezegun import freeze_time
 from ee.clickhouse.materialized_columns.columns import (
     MaterializedColumn,
     MaterializedColumnDetails,
+    PropertyInfo,
     backfill_materialized_columns,
     drop_column,
     get_enabled_materialized_columns,
@@ -37,8 +38,7 @@ class TestMaterializedColumnDetails(TestCase):
         old_format_comment = "column_materializer::foo"
         old_format_details = MaterializedColumnDetails.from_column_comment(old_format_comment)
         assert old_format_details == MaterializedColumnDetails(
-            "properties",  # the default
-            "foo",
+            PropertyInfo("foo"),
             is_disabled=False,
         )
         # old comment format is implicitly upgraded to the newer format when serializing
@@ -47,8 +47,7 @@ class TestMaterializedColumnDetails(TestCase):
         new_format_comment = "column_materializer::person_properties::bar"
         new_format_details = MaterializedColumnDetails.from_column_comment(new_format_comment)
         assert new_format_details == MaterializedColumnDetails(
-            "person_properties",
-            "bar",
+            PropertyInfo("bar", "person_properties"),
             is_disabled=False,
         )
         assert new_format_details.as_column_comment() == new_format_comment
@@ -56,8 +55,7 @@ class TestMaterializedColumnDetails(TestCase):
         new_format_disabled_comment = "column_materializer::person_properties::bar::disabled"
         new_format_disabled_details = MaterializedColumnDetails.from_column_comment(new_format_disabled_comment)
         assert new_format_disabled_details == MaterializedColumnDetails(
-            "person_properties",
-            "bar",
+            PropertyInfo("bar", "person_properties"),
             is_disabled=True,
         )
         assert new_format_disabled_details.as_column_comment() == new_format_disabled_comment
@@ -88,7 +86,7 @@ class TestMaterializedColumns(ClickhouseTestMixin, BaseTest):
 
     def test_get_columns_default(self):
         self.assertCountEqual(
-            [column.details.property_name for column in MaterializedColumn.get_all("events")],
+            [column.details.property.name for column in MaterializedColumn.get_all("events")],
             EVENTS_TABLE_DEFAULT_MATERIALIZED_COLUMNS,
         )
         self.assertCountEqual(MaterializedColumn.get_all("person"), [])
@@ -314,7 +312,7 @@ class TestMaterializedColumns(ClickhouseTestMixin, BaseTest):
         assert get_materialized_columns(table)[key].name == destination_column_name
         assert MaterializedColumn.get(table, destination_column_name) == MaterializedColumn(
             destination_column_name,
-            MaterializedColumnDetails(source_column, property, is_disabled=False),
+            MaterializedColumnDetails(PropertyInfo(property, source_column), is_disabled=False),
             is_nullable=False,
         )
 
@@ -323,7 +321,7 @@ class TestMaterializedColumns(ClickhouseTestMixin, BaseTest):
         assert get_materialized_columns(table)[key].name == destination_column_name
         assert MaterializedColumn.get(table, destination_column_name) == MaterializedColumn(
             destination_column_name,
-            MaterializedColumnDetails(source_column, property, is_disabled=True),
+            MaterializedColumnDetails(PropertyInfo(property, source_column), is_disabled=True),
             is_nullable=False,
         )
 
@@ -332,7 +330,7 @@ class TestMaterializedColumns(ClickhouseTestMixin, BaseTest):
         assert get_materialized_columns(table)[key].name == destination_column_name
         assert MaterializedColumn.get(table, destination_column_name) == MaterializedColumn(
             destination_column_name,
-            MaterializedColumnDetails(source_column, property, is_disabled=False),
+            MaterializedColumnDetails(PropertyInfo(property, source_column), is_disabled=False),
             is_nullable=False,
         )
 

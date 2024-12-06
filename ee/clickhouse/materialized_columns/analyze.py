@@ -186,9 +186,7 @@ def materialize_properties_task(
 
     result: list[Suggestion] = []
     for table, table_properties_to_materialize in properties_by_table.items():
-        already_materialized = {
-            (column.details.table_column, column.details.property_name) for column in MaterializedColumn.get_all(table)
-        }
+        already_materialized = {column.details.property for column in MaterializedColumn.get_all(table)}
         result.extend(
             [
                 (table, table_column, property_name)

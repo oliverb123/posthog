@@ -6,7 +6,7 @@ from collections.abc import Callable, Iterable, Iterator
 from copy import copy
 from dataclasses import dataclass, replace
 from datetime import timedelta
-from typing import Any, Literal, TypeVar, cast
+from typing import Any, Literal, NamedTuple, TypeVar, cast
 
 from clickhouse_driver import Client
 from django.utils.timezone import now
@@ -58,13 +58,13 @@ class MaterializedColumn:
     def get_expression_and_parameters(self) -> tuple[str, dict[str, Any]]:
         if self.is_nullable:
             return (
-                f"JSONExtract({self.details.table_column}, %(property_name)s, %(property_type)s)",
-                {"property_name": self.details.property_name, "property_type": self.type},
+                f"JSONExtract({self.details.property.column}, %(property_name)s, %(property_type)s)",
+                {"property_name": self.details.property.name, "property_type": self.type},
             )
         else:
             return (
-                trim_quotes_expr(f"JSONExtractRaw({self.details.table_column}, %(property)s)"),
-                {"property": self.details.property_name},
+                trim_quotes_expr(f"JSONExtractRaw({self.details.property.column}, %(property)s)"),
+                {"property": self.details.property.name},
             )
 
     @staticmethod
@@ -100,10 +100,14 @@ class MaterializedColumn:
                 raise ValueError(f"got {len(columns)} columns, expected 0 or 1")
 
 
+class PropertyInfo(NamedTuple):
+    name: PropertyName
+    column: TableColumn = DEFAULT_TABLE_COLUMN
+
+
 @dataclass(frozen=True)
 class MaterializedColumnDetails:
-    table_column: TableColumn
-    property_name: PropertyName
+    property: PropertyInfo
     is_disabled: bool
 
     COMMENT_PREFIX = "column_materializer"
@@ -111,7 +115,7 @@ class MaterializedColumnDetails:
     COMMENT_DISABLED_MARKER = "disabled"
 
     def as_column_comment(self) -> str:
-        bits = [self.COMMENT_PREFIX, self.table_column, self.property_name]
+        bits = [self.COMMENT_PREFIX, self.property.column, self.property.name]
         if self.is_disabled:
             bits.append(self.COMMENT_DISABLED_MARKER)
         return self.COMMENT_SEPARATOR.join(bits)
@@ -121,30 +125,31 @@ class MaterializedColumnDetails:
         match comment.split(cls.COMMENT_SEPARATOR, 3):
             # Old style comments have the format "column_materializer::property", dealing with the default table column.
             case [cls.COMMENT_PREFIX, property_name]:
-                return MaterializedColumnDetails(DEFAULT_TABLE_COLUMN, property_name, is_disabled=False)
+                return MaterializedColumnDetails(PropertyInfo(property_name), is_disabled=False)
             # Otherwise, it's "column_materializer::table_column::property" for columns that are active.
             case [cls.COMMENT_PREFIX, table_column, property_name]:
-                return MaterializedColumnDetails(cast(TableColumn, table_column), property_name, is_disabled=False)
+                return MaterializedColumnDetails(
+                    PropertyInfo(property_name, cast(TableColumn, table_column)), is_disabled=False
+                )
             # Columns that are marked as disabled have an extra trailer indicating their status.
             case [cls.COMMENT_PREFIX, table_column, property_name, cls.COMMENT_DISABLED_MARKER]:
-                return MaterializedColumnDetails(cast(TableColumn, table_column), property_name, is_disabled=True)
+                return MaterializedColumnDetails(
+                    PropertyInfo(property_name, cast(TableColumn, table_column)), is_disabled=True
+                )
             case _:
                 raise ValueError(f"unexpected comment format: {comment!r}")
 
 
 def get_materialized_columns(
     table: TablesWithMaterializedColumns,
-) -> dict[tuple[PropertyName, TableColumn], MaterializedColumn]:
-    return {
-        (column.details.property_name, column.details.table_column): column
-        for column in MaterializedColumn.get_all(table)
-    }
+) -> dict[PropertyInfo, MaterializedColumn]:
+    return {column.details.property: column for column in MaterializedColumn.get_all(table)}
 
 
 @cache_for(timedelta(minutes=15))
 def get_enabled_materialized_columns(
     table: TablesWithMaterializedColumns,
-) -> dict[tuple[PropertyName, TableColumn], MaterializedColumn]:
+) -> dict[PropertyInfo, MaterializedColumn]:
     return {k: column for k, column in get_materialized_columns(table).items() if not column.details.is_disabled}
 
 
@@ -258,8 +263,7 @@ def materialize(
     column = MaterializedColumn(
         name=column_name or _materialized_column_name(table, property, table_column),
         details=MaterializedColumnDetails(
-            table_column=table_column,
-            property_name=property,
+            property=PropertyInfo(property, table_column),
             is_disabled=False,
         ),
         is_nullable=is_nullable,

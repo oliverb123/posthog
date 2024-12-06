@@ -774,7 +774,7 @@ class QuerySuite:
             columns = [
                 materialize(table, property)
                 for property in (
-                    set(properties) - {column.details.property_name for column in MaterializedColumn.get_all(table)}
+                    set(properties) - {column.details.property.name for column in MaterializedColumn.get_all(table)}
                 )
             ]
             backfill_materialized_columns(
