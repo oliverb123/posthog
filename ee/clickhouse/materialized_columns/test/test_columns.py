@@ -88,10 +88,10 @@ class TestMaterializedColumns(ClickhouseTestMixin, BaseTest):
 
     def test_get_columns_default(self):
         self.assertCountEqual(
-            [property_name for property_name, _ in get_materialized_columns("events")],
+            [column.details.property_name for column in MaterializedColumn.get_all("events")],
             EVENTS_TABLE_DEFAULT_MATERIALIZED_COLUMNS,
         )
-        self.assertCountEqual(get_materialized_columns("person"), [])
+        self.assertCountEqual(MaterializedColumn.get_all("person"), [])
 
     def test_caching_and_materializing(self):
         with freeze_time("2020-01-04T13:01:01Z"):
