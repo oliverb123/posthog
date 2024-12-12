@@ -101,6 +101,7 @@ export type SettingId =
     | 'web-vitals-autocapture'
     | 'dead-clicks-autocapture'
     | 'channel-type'
+    | 'cookieless-server-hash-mode'
 
 type FeatureFlagKey = keyof typeof FEATURE_FLAGS
 
