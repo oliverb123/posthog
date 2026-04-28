@@ -1,3 +1,4 @@
+import functools
 from datetime import timedelta
 
 from django.conf import settings
@@ -17,7 +18,14 @@ from products.signals.backend.temporal.emitter import SignalEmitterInput, Signal
 from products.signals.backend.temporal.types import BufferSignalsInput, EmitSignalInputs
 
 MAX_SIGNAL_DESCRIPTION_TOKENS = 8000
-_tiktoken_encoding = tiktoken.get_encoding("cl100k_base")
+
+
+# Lazy so we don't perform network I/O (tiktoken downloads the encoding from
+# Azure blob storage on first use) during Django app loading — a transient
+# outage would otherwise prevent Celery/Django workers from booting.
+@functools.cache
+def _get_tiktoken_encoding() -> tiktoken.Encoding:
+    return tiktoken.get_encoding("cl100k_base")
 
 
 async def emit_signal(
@@ -67,7 +75,7 @@ async def emit_signal(
     if not is_enabled:
         return
 
-    token_count = len(_tiktoken_encoding.encode(description))
+    token_count = len(_get_tiktoken_encoding().encode(description))
     if token_count > MAX_SIGNAL_DESCRIPTION_TOKENS:
         raise ValueError(
             f"Signal description exceeds {MAX_SIGNAL_DESCRIPTION_TOKENS} tokens ({token_count} tokens). "
