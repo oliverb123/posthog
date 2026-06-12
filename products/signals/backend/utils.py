@@ -41,6 +41,7 @@ def soft_delete_report_signals(report_id: str, team_id: int, team: Team) -> None
         )
         WHERE JSONExtractString(metadata, 'report_id') = {report_id}
         ORDER BY timestamp ASC
+        -- Caps the fetch at 5,000 signal rows per call; reports above this leave the remainder unfetched.
         LIMIT 5000
     """
 
