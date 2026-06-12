@@ -18,8 +18,12 @@ def soft_delete_report_signals(report_id: str, team_id: int, team: Team) -> None
     Soft-delete all ClickHouse signals for a report by re-emitting them with metadata.deleted=True.
 
     Preserves the original timestamp so each row lands in the same ReplacingMergeTree partition
-    and replaces the original. Intentionally fetches ALL signals (including already-deleted ones)
-    so no signals are missed on repeated calls.
+    and replaces the original. Re-emits already-deleted rows too, so repeated calls are idempotent.
+
+    Note: the fetch below is currently capped at LIMIT 5000 with no pagination, so reports that
+    accumulated more than 5,000 signal rows leave the remainder un-deleted (those can resurface in
+    later clustering runs). Truly fetching ALL signals requires paginating the query — tracked as a
+    follow-up.
     """
     query = """
         SELECT
