@@ -41,6 +41,9 @@ def soft_delete_report_signals(report_id: str, team_id: int, team: Team) -> None
         )
         WHERE JSONExtractString(metadata, 'report_id') = {report_id}
         ORDER BY timestamp ASC
+        -- NOTE: capped at 5,000 rows with no pagination. Reports that accumulate
+        -- more than 5,000 signals leave the remainder un-deleted, so they can
+        -- re-match future clustering runs and resurface in the inbox.
         LIMIT 5000
     """
 
