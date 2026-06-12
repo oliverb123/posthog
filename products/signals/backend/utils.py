@@ -21,6 +21,10 @@ def soft_delete_report_signals(report_id: str, team_id: int, team: Team) -> None
     and replaces the original. Intentionally fetches ALL signals (including already-deleted ones)
     so no signals are missed on repeated calls.
     """
+    # NOTE: despite the docstring above, the fetch below is capped at LIMIT 5000 with no
+    # pagination — reports with more than 5,000 signal rows leave the remainder un-deleted,
+    # so dismissed reports can resurface in later clustering runs. Needs pagination to truly
+    # fetch ALL signals.
     query = """
         SELECT
             document_id,
