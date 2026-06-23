@@ -67,6 +67,12 @@ TYPE_CONVERSION_FUNCTIONS: dict[str, HogQLFunctionMeta] = {
     ),
     "_toDate": HogQLFunctionMeta("toDate", 1, 1),
     "toUUID": HogQLFunctionMeta("accurateCastOrNull", 1, 1, suffix_args=[ast.Constant(value="UUID")]),
+    # The OrNull/OrZero spellings are aliased to the same NULL-on-failure cast as `toUUID`.
+    # HogQL deliberately routes UUID casts through `accurateCastOrNull` so invalid input yields
+    # NULL instead of erroring, and that safe form is valid regardless of which native
+    # `toUUIDOr*` helpers a given ClickHouse build exposes.
+    "toUUIDOrNull": HogQLFunctionMeta("accurateCastOrNull", 1, 1, suffix_args=[ast.Constant(value="UUID")]),
+    "toUUIDOrZero": HogQLFunctionMeta("accurateCastOrNull", 1, 1, suffix_args=[ast.Constant(value="UUID")]),
     "toUUIDOrDefault": HogQLFunctionMeta("toUUIDOrDefault", 2, 2),
     "toString": HogQLFunctionMeta(
         "toString",

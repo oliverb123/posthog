@@ -1121,6 +1121,15 @@ class TestPrinter(BaseTest):
             self._expr("toUUID('470f9b15-ff43-402a-af9f-2ed7c526a6cf')", context),
             "accurateCastOrNull(%(hogql_val_4)s, %(hogql_val_5)s)",
         )
+        # toUUIDOrNull/toUUIDOrZero are aliased to the same safe cast as toUUID
+        self.assertEqual(
+            self._expr("toUUIDOrNull('470f9b15-ff43-402a-af9f-2ed7c526a6cf')"),
+            "accurateCastOrNull(%(hogql_val_0)s, %(hogql_val_1)s)",
+        )
+        self.assertEqual(
+            self._expr("toUUIDOrZero('470f9b15-ff43-402a-af9f-2ed7c526a6cf')"),
+            "accurateCastOrNull(%(hogql_val_0)s, %(hogql_val_1)s)",
+        )
         self.assertEqual(
             self._expr("toDecimal('3.14', 2)", context), "accurateCastOrNull(%(hogql_val_6)s, %(hogql_val_7)s)"
         )
@@ -5160,6 +5169,8 @@ class TestPostgresPrinter(BaseTest):
             ("toIntOrZero", "toIntOrZero('42')", "CAST('42' AS BIGINT)"),
             ("toBool", "toBool(1)", "CAST(1 AS BOOLEAN)"),
             ("toUUID", "toUUID('abc')", "CAST('abc' AS UUID)"),
+            ("toUUIDOrNull", "toUUIDOrNull('abc')", "CAST('abc' AS UUID)"),
+            ("toUUIDOrZero", "toUUIDOrZero('abc')", "CAST('abc' AS UUID)"),
             ("toDecimal", "toDecimal(1, 2)", "CAST(1 AS DECIMAL)"),
             ("toDateTime64", "toDateTime64('2024-01-01', 3)", "CAST('2024-01-01' AS TIMESTAMP)"),
             # Date extraction

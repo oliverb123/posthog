@@ -211,6 +211,8 @@ POSTGRES_FUNCTION_HANDLERS: dict[str, Callable[[list[str]], str]] = {
     "toIntOrZero": _make_cast_handler("BIGINT"),
     "toBool": _make_cast_handler("BOOLEAN"),
     "toUUID": _make_cast_handler("UUID"),
+    "toUUIDOrNull": _make_cast_handler("UUID"),
+    "toUUIDOrZero": _make_cast_handler("UUID"),
     # Date extraction
     "toYear": _make_extract_handler("YEAR"),
     "toQuarter": _make_extract_handler("QUARTER"),
